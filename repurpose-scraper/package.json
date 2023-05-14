@@ -1,0 +1,15 @@
+{
+  "name": "repurpose-scraper",
+  "version": "1.0.0",
+  "description": "scrapes CSV social data from repurpose.io",
+  "main": "index.js",
+  "author": "John Vandivier <john@ladderly.io>",
+  "license": "MIT",
+  "dependencies": {
+    "csv-writer": "1.6.0",
+    "puppeteer": "20.2.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

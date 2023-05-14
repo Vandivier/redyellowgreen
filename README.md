@@ -7,4 +7,4 @@ a service in the [ladderly-slides](https://github.com/Vandivier/ladderly-slides)
 
 believe it or not, this is a monorepo:
 1. the root folder is a blitz project
-2. `./repurpose-scraper` is a python scraper that provides seeds for the blitz project
+2. `./repurpose-scraper` is a web scraper that provides seeds for the blitz project
