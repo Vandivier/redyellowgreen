@@ -1,5 +1,6 @@
+require("dotenv").config()
+
 const puppeteer = require("puppeteer")
-const fs = require("fs")
 const createCsvWriter = require("csv-writer").createObjectCsvWriter
 
 async function main() {
@@ -9,8 +10,8 @@ async function main() {
   const page = await browser.newPage()
 
   await page.goto("https://my.repurpose.io/login")
-  await page.type('input[name="identifier"]', "your_username")
-  await page.type('input[name="password"]', "your_password")
+  await page.type('input[id="login-email"]', process.env.REPURPOSE_USERNAME)
+  await page.type('input[id="login-password"]', process.env.REPURPOSE_PASSWORD)
   await page.click('button[data-action="submit"]')
 
   // Wait for navigation to complete
