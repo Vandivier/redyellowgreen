@@ -10,6 +10,8 @@ function getRandomNumber(min, max) {
 }
 
 async function main() {
+  const ignoreCache = process.env.IGNORE_CACHE === "true"
+
   const browser = await puppeteer.launch({
     headless: "new",
   })
@@ -24,7 +26,7 @@ async function main() {
   await page.waitForNavigation({ waitUntil: "networkidle0" })
 
   // Initialize the CSV file and writer
-  const csvPath = "social_data.csv"
+  const csvPath = "initial_social_data.csv"
   const isFirstPage = !fs.existsSync(csvPath)
 
   let csvWriter
@@ -37,14 +39,36 @@ async function main() {
         { id: "publishedAt", title: "Published At" },
         { id: "tiktokDescription", title: "TikTok Description" },
         { id: "repurposeId", title: "Repurpose ID" },
+        { id: "currentPage", title: "Current Page" },
+        { id: "scrapedAt", title: "Scraped At" },
       ],
     })
   } else {
+    let lastScrapedPage = 1
+
+    if (!ignoreCache) {
+      const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
+      const lastLine = csvData[csvData.length - 1]
+      const lastRecord = lastLine.split(",")
+      lastScrapedPage = parseInt(lastRecord[5]) || 1
+    }
+
     csvWriter = createCsvWriter({
       path: csvPath,
-      header: [],
+      header: [
+        { id: "tiktokUrl", title: "TikTok URL" },
+        { id: "youtubeUrl", title: "YouTube URL" },
+        { id: "publishedAt", title: "Published At" },
+        { id: "tiktokDescription", title: "TikTok Description" },
+        { id: "repurposeId", title: "Repurpose ID" },
+        { id: "currentPage", title: "Current Page" },
+        { id: "scrapedAt", title: "Scraped At" },
+      ],
       append: true,
     })
+
+    console.log(`Resuming scraping from page ${lastScrapedPage}`)
+    currentPage = lastScrapedPage
   }
 
   let hasNextPage = true
@@ -82,7 +106,13 @@ async function main() {
     )
 
     // Write the scraped data into the CSV file
-    await csvWriter.writeRecords(data)
+    const scrapedAt = new Date().toISOString()
+    const records = data.map((record) => ({
+      ...record,
+      currentPage,
+      scrapedAt,
+    }))
+    await csvWriter.writeRecords(records)
 
     // Get the total number of pages
     if (!totalPages) {
@@ -106,15 +136,15 @@ async function main() {
     const pauseDuration = getRandomNumber(2000, 6000)
     await page.waitForTimeout(pauseDuration)
     currentPage++
-
-    // if (hasNextPage) {
-
-    //   await page.click('[rel="next"]')
-    //   await page.waitForNavigation({ waitUntil: "networkidle0" })
-    // }
   }
 
   await browser.close()
+
+  // Filter out blank lines from CSV
+  const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
+  const cleanedCsvPath = "final_social_data.csv"
+  const filteredCsvData = csvData.filter((line) => line.trim() !== "")
+  fs.writeFileSync(cleanedCsvPath, filteredCsvData.join("\n"))
 }
 
 main()
