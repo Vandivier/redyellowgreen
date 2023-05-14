@@ -4,13 +4,14 @@ const puppeteer = require("puppeteer")
 const createCsvWriter = require("csv-writer").createObjectCsvWriter
 const fs = require("fs")
 
-// Function to generate a random number between min and max (inclusive)
 function getRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1) + min)
 }
 
 async function main() {
-  const ignoreCache = process.env.IGNORE_CACHE === "true"
+  const csvPath = "initial_social_data.csv"
+  const startFromScrapeCache = process.env.START_FROM_SCRAPE_CACHE === "true"
+  const shouldResume = startFromScrapeCache && fs.existsSync(csvPath)
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -26,11 +27,19 @@ async function main() {
   await page.waitForNavigation({ waitUntil: "networkidle0" })
 
   // Initialize the CSV file and writer
-  const csvPath = "initial_social_data.csv"
-  const isFirstPage = !fs.existsSync(csvPath)
-
+  let currentPage = 1
+  let lastScrapedPage = 1
   let csvWriter
-  if (isFirstPage) {
+
+  if (shouldResume) {
+    const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
+    const lastLine = csvData[csvData.length - 1]
+    const lastRecord = lastLine.split(",")
+    lastScrapedPage = parseInt(lastRecord[4]) || 1
+    currentPage = lastScrapedPage
+  }
+
+  if (currentPage === 1) {
     csvWriter = createCsvWriter({
       path: csvPath,
       header: [
@@ -38,21 +47,11 @@ async function main() {
         { id: "youtubeUrl", title: "YouTube URL" },
         { id: "publishedAt", title: "Published At" },
         { id: "tiktokDescription", title: "TikTok Description" },
-        { id: "repurposeId", title: "Repurpose ID" },
         { id: "currentPage", title: "Current Page" },
         { id: "scrapedAt", title: "Scraped At" },
       ],
     })
   } else {
-    let lastScrapedPage = 1
-
-    if (!ignoreCache) {
-      const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
-      const lastLine = csvData[csvData.length - 1]
-      const lastRecord = lastLine.split(",")
-      lastScrapedPage = parseInt(lastRecord[5]) || 1
-    }
-
     csvWriter = createCsvWriter({
       path: csvPath,
       header: [
@@ -60,7 +59,6 @@ async function main() {
         { id: "youtubeUrl", title: "YouTube URL" },
         { id: "publishedAt", title: "Published At" },
         { id: "tiktokDescription", title: "TikTok Description" },
-        { id: "repurposeId", title: "Repurpose ID" },
         { id: "currentPage", title: "Current Page" },
         { id: "scrapedAt", title: "Scraped At" },
       ],
@@ -68,11 +66,9 @@ async function main() {
     })
 
     console.log(`Resuming scraping from page ${lastScrapedPage}`)
-    currentPage = lastScrapedPage
   }
 
   let hasNextPage = true
-  let currentPage = 1
   let totalPages
 
   while (hasNextPage) {
@@ -88,26 +84,26 @@ async function main() {
         const tiktokUrl = anchors.find((a) => a.href.includes("tiktok.com"))?.href
         const youtubeUrl = anchors.find((a) => a.href.includes("youtube.com"))?.href
         const tiktokDescription = tr.querySelector("div.sub-epis-title")?.innerText
-
         const publishedAtParagraph = tr.querySelector('p[class*="published_date_time_"]')
         const publishedAt = publishedAtParagraph ? publishedAtParagraph.innerText : null
-        const repurposeId = publishedAtParagraph
-          ? publishedAtParagraph.className.split("_").pop()
-          : null
 
         return {
           tiktokUrl,
           youtubeUrl,
           publishedAt,
           tiktokDescription,
-          repurposeId,
         }
       })
     )
 
-    // Write the scraped data into the CSV file
+    // Filter out duplicates based on tiktokUrl
+    const filteredData = data.filter(
+      (record, index, self) => index === self.findIndex((r) => r.tiktokUrl === record.tiktokUrl)
+    )
+
+    // Write the filtered data into the CSV file
     const scrapedAt = new Date().toISOString()
-    const records = data.map((record) => ({
+    const records = filteredData.map((record) => ({
       ...record,
       currentPage,
       scrapedAt,
@@ -133,6 +129,7 @@ async function main() {
     )
 
     // Generate a random pause between 2-6 seconds
+    // to avoid getting blocked by the server
     const pauseDuration = getRandomNumber(2000, 6000)
     await page.waitForTimeout(pauseDuration)
     currentPage++
@@ -142,8 +139,16 @@ async function main() {
 
   // Filter out blank lines from CSV
   const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
+
+  // Sort the rows by TikTok URL
+  const sortedCsvData = csvData.sort((a, b) => {
+    const urlA = a.split(",")[0].toLowerCase()
+    const urlB = b.split(",")[0].toLowerCase()
+    return urlA.localeCompare(urlB)
+  })
+
   const cleanedCsvPath = "final_social_data.csv"
-  const filteredCsvData = csvData.filter((line) => line.trim() !== "")
+  const filteredCsvData = sortedCsvData.filter((line) => line.trim() !== "")
   fs.writeFileSync(cleanedCsvPath, filteredCsvData.join("\n"))
 }
 
