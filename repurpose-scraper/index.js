@@ -20,21 +20,33 @@ async function main() {
   // Navigate to the target page
   await page.goto("https://my.repurpose.io/viewEpisodes/139229")
 
-  // Find all 'tr' elements and extract URLs from 'a' elements
-  const urls = await page.$$eval("tr", (trs) =>
-    trs.map((tr) => Array.from(tr.querySelectorAll("a"), (a) => a.href)).flat()
+  // Extract the required information from each 'tr' element
+  const data = await page.$$eval("tr", (trs) =>
+    trs.map((tr) => {
+      const anchors = Array.from(tr.querySelectorAll("a"))
+      const tiktokUrl = anchors.find((a) => a.href.includes("tiktok.com"))?.href
+      const youtubeUrl = anchors.find((a) => a.href.includes("youtube.com"))?.href
+      const publishedAt = tr.querySelector("td.publishedAt")?.innerText
+      const tiktokDescription = tr.querySelector("div.sub-epis-title")?.innerText
+
+      return { tiktokUrl, youtubeUrl, publishedAt, tiktokDescription }
+    })
   )
 
   await browser.close()
 
-  // Write the scraped URLs into a CSV file
+  // Write the scraped data into a CSV file
   const csvWriter = createCsvWriter({
     path: "social_data.csv",
-    header: [{ id: "url", title: "URL" }],
+    header: [
+      { id: "tiktokUrl", title: "TikTok URL" },
+      { id: "youtubeUrl", title: "YouTube URL" },
+      { id: "publishedAt", title: "Published At" },
+      { id: "tiktokDescription", title: "TikTok Description" },
+    ],
   })
 
-  const records = urls.map((url) => ({ url: url }))
-  await csvWriter.writeRecords(records)
+  await csvWriter.writeRecords(data)
 }
 
 main()
