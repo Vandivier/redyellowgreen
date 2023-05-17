@@ -1,11 +1,15 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 datasource db {
   provider          = "postgresql"
-  url               = env("POSTGRES_PRISMA_URL") // uses connection pooling
+  url               = env("POSTGRES_PRISMA_URL")
+  // uses connection pooling
   // url      = env("DATABASE_URL")
-  directUrl         = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
-  shadowDatabaseUrl = env("POSTGRES_URL_NON_POOLING") // used for migrations
+  directUrl         = env("POSTGRES_URL_NON_POOLING")
+  // uses a direct connection
+  shadowDatabaseUrl = env("POSTGRES_URL_NON_POOLING")
+  // used for migrations
 }
 
 generator client {
@@ -65,3 +69,15 @@ model Token {
 // enum TokenType {
 //   RESET_PASSWORD
 // }
+
+model SocialMediaContent {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tikTokUrl   String
+  youTubeUrl  String
+  publishedAt DateTime
+  description String
+  currentPage Int
+  scrapedAt   DateTime
+}

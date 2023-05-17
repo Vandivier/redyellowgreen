@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "blitz dev",
     "build": "blitz prisma generate && blitz build",
+    "seed": "blitz db seed",
     "start": "blitz start",
     "studio": "blitz prisma studio",
     "lint": "eslint --ignore-path .gitignore --ext .js,.ts,.tsx .",
@@ -30,6 +31,7 @@
     "@prisma/client": "4.13.0",
     "@vercel/postgres": "0.3.0",
     "blitz": "2.0.0-beta.27",
+    "csv-parser": "3.0.0",
     "final-form": "4.20.9",
     "next": "^13.3.0",
     "prisma": "4.13.0",

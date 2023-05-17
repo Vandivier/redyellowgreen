@@ -1,15 +1,22 @@
-// import db from "./index"
+import db from "./index"
+import fs from "fs"
+import csv from "csv-parser"
 
-/*
- * This seed function is executed when you run `blitz db seed`.
- *
- * Probably you want to use a library like https://chancejs.com
- * to easily generate realistic data.
- */
 const seed = async () => {
-  // for (let i = 0; i < 5; i++) {
-  //   await db.project.create({ data: { name: "Project " + i } })
-  // }
+  fs.createReadStream("./repurpose-scraper/initial_social_data.csv")
+    .pipe(csv())
+    .on("data", async (row) => {
+      await db.socialMediaContent.create({
+        data: {
+          tikTokUrl: row["TikTok URL"],
+          youTubeUrl: row["YouTube URL"],
+          publishedAt: new Date(row["Published At"].replace(" | ", " ")),
+          description: row["TikTok Description"],
+          currentPage: parseInt(row["Current Page"]),
+          scrapedAt: new Date(row["Scraped At"]),
+        },
+      })
+    })
 }
 
 export default seed
