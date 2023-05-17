@@ -31,7 +31,7 @@ export const SocialMediaContentsList = () => {
                 socialMediaContentId: socialMediaContent.id,
               })}
             >
-              {socialMediaContent.name}
+              {socialMediaContent.tikTokUrl}
             </Link>
           </li>
         ))}
