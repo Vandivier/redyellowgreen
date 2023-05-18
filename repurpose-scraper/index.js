@@ -9,9 +9,16 @@ function getRandomNumber(min, max) {
 }
 
 async function main() {
+  // TODO: use env var REPURPOSE_WORKFLOW_NAMES to get workflow names
+  const workflowListCsvPath = "workflow_data.csv"
+  const workflowListUrl = "https://my.repurpose.io/"
   const csvPath = "initial_social_data.csv"
   const startFromScrapeCache = process.env.START_FROM_SCRAPE_CACHE === "true"
   const shouldResume = startFromScrapeCache && fs.existsSync(csvPath)
+  const workflowCsvWriter = createCsvWriter({
+    path: workflowListCsvPath,
+    header: [{ id: "workflowId", title: "Workflow ID" }],
+  })
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -68,14 +75,36 @@ async function main() {
     console.log(`Resuming scraping from page ${lastScrapedPage}`)
   }
 
+  // Navigate to the workflow list page
+  await page.goto(workflowListUrl, { waitUntil: "networkidle0" })
+
+  // Scrape workflow IDs
+  const workflowIds = await page.$$eval("a.btn", (anchors) =>
+    anchors
+      .map((a) => a.href)
+      .filter((href) => href.includes("viewEpisodes"))
+      .map((href) => href.split("/").pop())
+  )
+
+  // Write the workflow IDs into the CSV file
+  const workflowRecords = workflowIds.map((id) => ({ workflowId: id }))
+  await workflowCsvWriter.writeRecords(workflowRecords)
+
+  console.log(`Saved ${workflowRecords.length} workflow IDs into ${workflowListCsvPath}`)
+
   let hasNextPage = true
   let totalPages
 
   while (hasNextPage) {
+    // TODO: don't hardcode currentWorkflowId; get it from workflow_data.csv
+    currentWorkflowId = "139229"
     // Navigate to the target page
-    await page.goto(`https://my.repurpose.io/viewEpisodes/139229?page=${currentPage}`, {
-      waitUntil: "networkidle0",
-    })
+    await page.goto(
+      `https://my.repurpose.io/viewEpisodes/${currentWorkflowId}?page=${currentPage}`,
+      {
+        waitUntil: "networkidle0",
+      }
+    )
 
     // Extract the required information from each 'tr' element
     const data = await page.$$eval("tr.press_item", (trs) =>
