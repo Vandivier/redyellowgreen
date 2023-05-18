@@ -71,13 +71,16 @@ model Token {
 // }
 
 model SocialMediaContent {
-  id          Int      @id @default(autoincrement())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  tikTokUrl   String
-  youTubeUrl  String
-  publishedAt DateTime
-  description String
-  currentPage Int
-  scrapedAt   DateTime
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tikTokUrl    String   @unique
+  youTubeUrl   String   @unique
+  instagramUrl String   @unique
+  twitterUrl   String   @unique
+  linkedInUrl  String   @unique
+  publishedAt  DateTime
+  description  String
+  currentPage  Int
+  scrapedAt    DateTime
 }
