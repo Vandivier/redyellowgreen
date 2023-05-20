@@ -17,9 +17,19 @@ const pauseBeforeNavigation = async (page) => {
   await page.waitForTimeout(pauseDuration)
 }
 
+const todayFormatted = () => {
+  const date = new Date()
+  const month = String(date.getMonth() + 1).padStart(2, "0") // pad single digit with leading zero
+  const day = String(date.getDate()).padStart(2, "0") // pad single digit with leading zero
+  const year = date.getFullYear().toString().substr(-2) // get last two digits of year
+
+  return `${month}/${day}/${year}`
+}
+
 async function scrapeWorkflowRecords(page, csvWriter) {
-  // Navigate to the page with the list of workflows
-  await page.goto(workflowListUrl, { waitUntil: "networkidle0" })
+  console.log("beginning workflow scrape")
+  await page.goto(workflowListUrl, { waitUntil: "domcontentloaded" })
+  console.log("done navigating to workflowListUrl")
 
   // Get workflow names and ids
   const workflowRecords = await page.evaluate((_workflowNames) => {
@@ -37,26 +47,33 @@ async function scrapeWorkflowRecords(page, csvWriter) {
       return { workflowName, workflowId }
     })
   }, workflowNames)
-  debugger
 
   await pauseBeforeNavigation(page)
+  console.log("obtained workflowRecords and done with pauseBeforeNavigation")
 
   // Navigate to each workflow page and get the total number of pages
   for (const record of workflowRecords) {
-    // // TODO: fix below...either they're having a perf issue or limitting me?
-    // debugger
-    // // 144073
-    // // https://my.repurpose.io/viewEpisodes/144073?page=1
-    // await page.goto(`https://my.repurpose.io/viewEpisodes/${record.workflowId}?page=1`, {
-    //   waitUntil: "networkidle0",
-    // })
+    await page.goto(`https://my.repurpose.io/viewEpisodes/${record.workflowId}?page=1`, {
+      timeout: 120000,
+      waitUntil: "domcontentloaded",
+    })
 
-    // debugger
+    record.totalPages = await page.evaluate(() => {
+      const nextPageLink = document.querySelector('[rel="next"]')
 
-    // record.totalPages = await page.evaluate(() => {
-    //   const nextPageLink = document.querySelector('[rel="next"]')
-    //   return Number(nextPageLink.parentElement.previousElementSibling.innerText)
-    // })
+      if (!nextPageLink) {
+        // the page sometimes renders differently in chromium
+        // normal mode means up to 25 rows of 3 links each
+        const normalLinkMaxCount = 75
+        const linkCount = document.querySelectorAll(".press_item a[href]").length
+        if (linkCount > normalLinkMaxCount) {
+          return 1
+        } else throw new Error("unknown err trying to count pages for workflow")
+      }
+
+      return Number(nextPageLink.parentElement.previousElementSibling.innerText)
+    })
+    record.pageCountDate = todayFormatted()
 
     console.log(
       `Done scraping workflow number ${workflowRecords.indexOf(record) + 1} out of ${
@@ -75,7 +92,7 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
   for (let { workflowId } of workflowRecords) {
     // Navigate to the first page to get the total number of pages
     await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=1`, {
-      waitUntil: "networkidle0",
+      waitUntil: "domcontentloaded",
     })
     let totalPages = await page.evaluate(() => {
       const nextPageLink = document.querySelector('[rel="next"]')
@@ -85,7 +102,7 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
     // Start scraping from the last page and go backwards
     for (let currentPage = totalPages; currentPage >= 1; currentPage--) {
       await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=${currentPage}`, {
-        waitUntil: "networkidle0",
+        waitUntil: "domcontentloaded",
       })
 
       const data = await page.$$eval("tr.press_item", (trs) =>
@@ -118,9 +135,7 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
       }))
 
       await csvWriter.writeRecords(records)
-
       console.log(`Done scraping page ${currentPage} out of ${totalPages} pages.`)
-
       await pauseBeforeNavigation(page)
     }
   }
@@ -140,17 +155,34 @@ async function main() {
   const browser = await puppeteer.launch({ headless: "new" })
   const page = await browser.newPage()
 
+  // await page.setRequestInterception(true)
+  // page.on("request", (req) => {
+  //   if (
+  //     req.resourceType() == "stylesheet" ||
+  //     req.resourceType() == "font" ||
+  //     req.resourceType() == "image" ||
+  //     req.url().includes("widget.frill")
+  //     // https://widget.frill.co/v2/widget.js
+  //   ) {
+  //     req.abort()
+  //   } else {
+  //     req.continue()
+  //   }
+  // })
+
   await page.goto("https://my.repurpose.io/login")
   await page.type('input[id="login-email"]', process.env.REPURPOSE_USERNAME)
   await page.type('input[id="login-password"]', process.env.REPURPOSE_PASSWORD)
   await page.click('button[data-action="submit"]')
-  await page.waitForNavigation({ waitUntil: "networkidle0" })
+  await page.waitForNavigation({ waitUntil: "domcontentloaded" })
 
   const workflowCsvWriter = createCsvWriter({
     path: workflowListCsvPath,
     header: [
       { id: "workflowId", title: "Workflow ID" },
       { id: "workflowName", title: "Workflow Name" },
+      { id: "totalPages", title: "Total Pages" },
+      { id: "pageCountDate", title: "Page Count Date" },
     ],
   })
 
