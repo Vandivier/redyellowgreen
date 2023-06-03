@@ -6,7 +6,7 @@ const fs = require("fs")
 
 const workflowListCsvPath = "workflow_list.csv"
 const workflowListUrl = "https://my.repurpose.io/"
-const workflowNames = process.env.REPURPOSE_WORKFLOW_NAMES.replace('"', "").split(",")
+const workflowNames = (process.env.REPURPOSE_WORKFLOW_NAMES || "").replace('"', "").split(",")
 
 function getRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1) + min)
@@ -53,6 +53,8 @@ async function scrapeWorkflowRecords(page, csvWriter) {
 
   // Navigate to each workflow page and get the total number of pages
   for (const record of workflowRecords) {
+    console.log(`Counting pages for workflowId: ${record.workflowId}`)
+
     await page.goto(`https://my.repurpose.io/viewEpisodes/${record.workflowId}?page=1`, {
       timeout: 120000,
       waitUntil: "domcontentloaded",
@@ -76,7 +78,7 @@ async function scrapeWorkflowRecords(page, csvWriter) {
     record.pageCountDate = todayFormatted()
 
     console.log(
-      `Done scraping workflow number ${workflowRecords.indexOf(record) + 1} out of ${
+      `Done counting pages for workflow number ${workflowRecords.indexOf(record) + 1} out of ${
         workflowRecords.length
       } workflows.`
     )
@@ -90,6 +92,8 @@ async function scrapeWorkflowRecords(page, csvWriter) {
 
 async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords) {
   for (let { workflowId } of workflowRecords) {
+    console.log(`Scraping page 1 for workflowId: ${workflowId}`)
+
     // Navigate to the first page to get the total number of pages
     await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=1`, {
       waitUntil: "domcontentloaded",
@@ -155,20 +159,21 @@ async function main() {
   const browser = await puppeteer.launch({ headless: "new" })
   const page = await browser.newPage()
 
-  // await page.setRequestInterception(true)
-  // page.on("request", (req) => {
-  //   if (
-  //     req.resourceType() == "stylesheet" ||
-  //     req.resourceType() == "font" ||
-  //     req.resourceType() == "image" ||
-  //     req.url().includes("widget.frill")
-  //     // https://widget.frill.co/v2/widget.js
-  //   ) {
-  //     req.abort()
-  //   } else {
-  //     req.continue()
-  //   }
-  // })
+  if (process.env.WITH_REQUEST_INTERCEPTION) {
+    await page.setRequestInterception(true)
+    page.on("request", (req) => {
+      if (
+        req.resourceType() == "stylesheet" ||
+        req.resourceType() == "font" ||
+        req.resourceType() == "image" ||
+        req.url().includes("widget.frill")
+      ) {
+        req.abort()
+      } else {
+        req.continue()
+      }
+    })
+  }
 
   await page.goto("https://my.repurpose.io/login")
   await page.type('input[id="login-email"]', process.env.REPURPOSE_USERNAME)
@@ -205,4 +210,6 @@ async function main() {
   await browser.close()
 }
 
-main()
+main().catch((err) =>
+  console.log("Repurpose Scraper ended ungracefully with the following error", err)
+)
