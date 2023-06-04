@@ -1,48 +1,68 @@
-require("dotenv").config()
+import * as dotenv from "dotenv"
+dotenv.config()
 
-const puppeteer = require("puppeteer")
-const createCsvWriter = require("csv-writer").createObjectCsvWriter
-const fs = require("fs")
+import puppeteer, { Browser, Page } from "puppeteer"
+import { createObjectCsvWriter } from "csv-writer"
+import fs from "fs"
+import { CsvWriter } from "csv-writer/src/lib/csv-writer"
+import { ObjectMap } from "csv-writer/src/lib/lang/object"
 
-const workflowListCsvPath = "workflow_list.csv"
-const workflowListUrl = "https://my.repurpose.io/"
-const workflowNames = (process.env.REPURPOSE_WORKFLOW_NAMES || "").replace('"', "").split(",")
+const workflowContentCsvPath: string = "initial_social_data.csv"
+const workflowListCsvPath: string = "workflow_list.csv"
+const workflowListUrl: string = "https://my.repurpose.io/"
+const workflowNames: string[] = (process.env.REPURPOSE_WORKFLOW_NAMES || "")
+  .replace('"', "")
+  .split(",")
 
-function getRandomNumber(min, max) {
+function getRandomNumber(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1) + min)
 }
 
-const pauseBeforeNavigation = async (page) => {
-  const pauseDuration = getRandomNumber(2000, 6000)
+const pauseBeforeNavigation = async (page: Page): Promise<void> => {
+  const pauseDuration: number = getRandomNumber(2000, 6000)
   await page.waitForTimeout(pauseDuration)
 }
 
-const todayFormatted = () => {
-  const date = new Date()
-  const month = String(date.getMonth() + 1).padStart(2, "0") // pad single digit with leading zero
-  const day = String(date.getDate()).padStart(2, "0") // pad single digit with leading zero
-  const year = date.getFullYear().toString().substr(-2) // get last two digits of year
+const todayFormatted = (): string => {
+  const date: Date = new Date()
+  const month: string = String(date.getMonth() + 1).padStart(2, "0")
+  const day: string = String(date.getDate()).padStart(2, "0")
+  const year: string = date.getFullYear().toString().substr(-2)
 
   return `${month}/${day}/${year}`
 }
 
-async function scrapeWorkflowRecords(page, csvWriter) {
+interface WorkflowRecord {
+  workflowName: string
+  workflowId: string
+  totalPages?: number
+  pageCountDate?: string
+}
+
+async function scrapeWorkflowRecords(
+  page: Page,
+  csvWriter: CsvWriter<ObjectMap<any>>
+): Promise<WorkflowRecord[]> {
   console.log("beginning workflow scrape")
   await page.goto(workflowListUrl, { waitUntil: "domcontentloaded" })
   console.log("done navigating to workflowListUrl")
 
   // Get workflow names and ids
-  const workflowRecords = await page.evaluate((_workflowNames) => {
+  const workflowRecords: WorkflowRecord[] = await page.evaluate((_workflowNames) => {
     const rows = Array.from(document.querySelectorAll("tr.press_item")).filter((elRow) =>
-      _workflowNames.includes(elRow.querySelector("div.workflow-name").innerText)
+      _workflowNames.includes(
+        elRow.querySelector<HTMLElement>("div.workflow-name")?.innerText || ""
+      )
     )
 
     return rows.map((elRow) => {
-      const workflowName = elRow.querySelector("div.workflow-name").innerText
-      const workflowId = Array.from(elRow.querySelectorAll("a.btn"))
-        .find((elBtn) => elBtn.innerText.toLowerCase() === "view content")
-        .href.split("/")
-        .pop()
+      const workflowName = elRow.querySelector<HTMLElement>("div.workflow-name")?.innerText || ""
+      const anchorsInRow = Array.from(elRow.querySelectorAll<HTMLAnchorElement>("a.btn") || [])
+      const workflowId =
+        anchorsInRow
+          .find((elBtn) => elBtn.innerText.toLowerCase() === "view content")
+          ?.href.split("/")
+          .pop() || ""
 
       return { workflowName, workflowId }
     })
@@ -61,7 +81,7 @@ async function scrapeWorkflowRecords(page, csvWriter) {
     })
 
     record.totalPages = await page.evaluate(() => {
-      const nextPageLink = document.querySelector('[rel="next"]')
+      const nextPageLink = document.querySelector<HTMLElement>('[rel="next"]')
 
       if (!nextPageLink) {
         // the page sometimes renders differently in chromium
@@ -73,7 +93,15 @@ async function scrapeWorkflowRecords(page, csvWriter) {
         } else throw new Error("unknown err trying to count pages for workflow")
       }
 
-      return Number(nextPageLink.parentElement.previousElementSibling.innerText)
+      const prevSibling = (nextPageLink.parentElement?.previousElementSibling ||
+        new HTMLElement()) as HTMLElement
+      const count = Number(prevSibling?.innerText)
+
+      if (Number.isNaN(count)) {
+        throw new Error(`Unexpected page count of NaN for workflowId: ${record.workflowId}`)
+      }
+
+      return Number(count)
     })
     record.pageCountDate = todayFormatted()
 
@@ -90,21 +118,26 @@ async function scrapeWorkflowRecords(page, csvWriter) {
   return workflowRecords
 }
 
-async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords) {
-  for (let { workflowId } of workflowRecords) {
-    console.log(`Scraping page 1 for workflowId: ${workflowId}`)
+async function scrapeSocialMediaContentRecords(
+  page: Page,
+  csvWriter: CsvWriter<ObjectMap<any>>,
+  workflowRecords: WorkflowRecord[]
+): Promise<void> {
+  for (let { workflowId, totalPages } of workflowRecords) {
+    if (!totalPages) {
+      console.log(`unexpected nullish totalPages for workflowId: ${workflowId}`)
+      continue
+    }
 
     // Navigate to the first page to get the total number of pages
     await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=1`, {
       waitUntil: "domcontentloaded",
     })
-    let totalPages = await page.evaluate(() => {
-      const nextPageLink = document.querySelector('[rel="next"]')
-      return Number(nextPageLink.parentElement.previousElementSibling.innerText)
-    })
 
     // Start scraping from the last page and go backwards
     for (let currentPage = totalPages; currentPage >= 1; currentPage--) {
+      console.log(`Scraping page ${currentPage} for workflowId: ${workflowId}`)
+
       await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=${currentPage}`, {
         waitUntil: "domcontentloaded",
       })
@@ -114,8 +147,10 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
           const anchors = Array.from(tr.querySelectorAll("a"))
           const tiktokUrl = anchors.find((a) => a.href.includes("tiktok.com"))?.href
           const youtubeUrl = anchors.find((a) => a.href.includes("youtube.com"))?.href
-          const tiktokDescription = tr.querySelector("div.sub-epis-title")?.innerText
-          const publishedAtParagraph = tr.querySelector('p[class*="published_date_time_"]')
+          const tiktokDescription = tr.querySelector<HTMLElement>("div.sub-epis-title")?.innerText
+          const publishedAtParagraph = tr.querySelector<HTMLElement>(
+            'p[class*="published_date_time_"]'
+          )
           const publishedAt = publishedAtParagraph ? publishedAtParagraph.innerText : null
 
           return {
@@ -144,7 +179,7 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
     }
   }
 
-  const csvData = fs.readFileSync(csvPath, "utf-8").trim().split("\n")
+  const csvData = fs.readFileSync(workflowContentCsvPath, "utf-8").trim().split("\n")
   const sortedCsvData = csvData.sort((a, b) => {
     const urlA = a.split(",")[0].toLowerCase()
     const urlB = b.split(",")[0].toLowerCase()
@@ -156,23 +191,27 @@ async function scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
 }
 
 async function main() {
-  const browser = await puppeteer.launch({ headless: "new" })
-  const page = await browser.newPage()
+  const browser: Browser = await puppeteer.launch({ headless: "new" })
+  const page: Page = await browser.newPage()
 
-  if (process.env.WITH_REQUEST_INTERCEPTION) {
+  if (process.env.WITH_REQUEST_INTERCEPTION === "true") {
     await page.setRequestInterception(true)
-    page.on("request", (req) => {
+    page.on("request", async (req) => {
       if (
         req.resourceType() == "stylesheet" ||
         req.resourceType() == "font" ||
         req.resourceType() == "image" ||
         req.url().includes("widget.frill")
       ) {
-        req.abort()
+        await req.abort()
       } else {
-        req.continue()
+        await req.continue()
       }
     })
+  }
+
+  if (!process.env.REPURPOSE_USERNAME || !process.env.REPURPOSE_PASSWORD) {
+    throw new Error("Invalid REPURPOSE_USERNAME or REPURPOSE_PASSWORD")
   }
 
   await page.goto("https://my.repurpose.io/login")
@@ -181,7 +220,7 @@ async function main() {
   await page.click('button[data-action="submit"]')
   await page.waitForNavigation({ waitUntil: "domcontentloaded" })
 
-  const workflowCsvWriter = createCsvWriter({
+  const workflowCsvWriter: CsvWriter<ObjectMap<any>> = createObjectCsvWriter({
     path: workflowListCsvPath,
     header: [
       { id: "workflowId", title: "Workflow ID" },
@@ -191,21 +230,21 @@ async function main() {
     ],
   })
 
-  // const csvWriter = createCsvWriter({
-  //   path: csvPath,
-  //   header: [
-  //     { id: "tiktokUrl", title: "TikTok URL" },
-  //     { id: "youtubeUrl", title: "YouTube URL" },
-  //     { id: "publishedAt", title: "Published At" },
-  //     { id: "tiktokDescription", title: "TikTok Description" },
-  //     { id: "currentPage", title: "Current Page" },
-  //     { id: "scrapedAt", title: "Scraped At" },
-  //   ],
-  //   append: shouldResume,
-  // })
+  const csvWriter = createObjectCsvWriter({
+    path: workflowContentCsvPath,
+    header: [
+      { id: "tiktokUrl", title: "TikTok URL" },
+      { id: "youtubeUrl", title: "YouTube URL" },
+      { id: "publishedAt", title: "Published At" },
+      { id: "tiktokDescription", title: "TikTok Description" },
+      { id: "currentPage", title: "Current Page" },
+      { id: "scrapedAt", title: "Scraped At" },
+    ],
+    append: process.env.START_FROM_SCRAPE_CACHE === "true",
+  })
 
   const workflowRecords = await scrapeWorkflowRecords(page, workflowCsvWriter)
-  // await scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
+  await scrapeSocialMediaContentRecords(page, csvWriter, workflowRecords)
 
   await browser.close()
 }
