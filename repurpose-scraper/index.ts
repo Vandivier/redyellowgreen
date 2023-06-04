@@ -129,16 +129,12 @@ async function scrapeSocialMediaContentRecords(
       continue
     }
 
-    // Navigate to the first page to get the total number of pages
-    await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=1`, {
-      waitUntil: "domcontentloaded",
-    })
-
     // Start scraping from the last page and go backwards
     for (let currentPage = totalPages; currentPage >= 1; currentPage--) {
       console.log(`Scraping page ${currentPage} for workflowId: ${workflowId}`)
 
       await page.goto(`https://my.repurpose.io/viewEpisodes/${workflowId}?page=${currentPage}`, {
+        timeout: 120000,
         waitUntil: "domcontentloaded",
       })
 

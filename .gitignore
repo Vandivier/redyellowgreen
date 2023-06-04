@@ -189,3 +189,7 @@ dist
 .pnp.*
 
 .vercel
+
+initial_social_data.csv
+final_social_data.csv
+workflow_list.csv
